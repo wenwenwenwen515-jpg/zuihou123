@@ -3,71 +3,90 @@ name: Build SmsForwarder V56 APK
 on:
   workflow_dispatch:
   push:
-   paths:
-   - “*.zip”
-   - “.github/workflows/build-apk.yml”
+    paths:
+      - '*.zip'
+      - '.github/workflows/build-apk.yml'
 
 permissions:
- contents: read
+  contents: read
 
 jobs:
- build:
-  runs-on: ubuntu-latest
+  build:
+    runs-on: ubuntu-latest
 
-  steps:
-  - name: 下载仓库内容
-    uses: actions/checkout@v4
-  - name: 设置 Java 11
-    uses: actions/setup-java@v4
-    with:
-      distribution: temurin
-      java-version: "11"
-  - name: 解压唯一源码 ZIP
-    shell: bash
-    run: |
-      set -euo pipefail
-      mapfile -t zips < <(find . -maxdepth 1 -type f -iname "*.zip" -print)
-      echo "找到的 ZIP 文件："
-      printf '%s\n' "${zips[@]}"
-      if [ "${#zips[@]}" -ne 1 ]; then
-        echo "错误：仓库根目录必须只保留一个源码 ZIP。"
-        exit 1
-      fi
-      mkdir -p source-unpack
-      unzip -q "${zips[0]}" -d source-unpack
-      mapfile -t wrappers < <(find source-unpack -type f -name gradlew -print)
-      if [ "${#wrappers[@]}" -ne 1 ]; then
-        echo "错误：源码包中没有找到唯一的 gradlew。"
-        exit 1
-      fi
-      echo "WRAPPER=${wrappers[0]}" >> "$GITHUB_ENV"
-  - name: 准备 Android Debug 签名文件
-    shell: bash
-    run: |
-      set -euo pipefail
-      project_dir="$(dirname "$WRAPPER")"
-      if [ ! -f "$project_dir/app/debug.keystore" ]; then
-        keytool -genkeypair -v \
-          -keystore "$project_dir/app/debug.keystore" \
-          -storepass android \
-          -alias androiddebugkey \
-          -keypass android \
-          -keyalg RSA \
-          -keysize 2048 \
-          -validity 10000 \
-          -dname "CN=Android Debug,O=Android,C=US"
-      fi
-  - name: 编译 APK
-    shell: bash
-    run: |
-      set -euo pipefail
-      chmod +x "$WRAPPER"
-      cd "$(dirname "$WRAPPER")"
-      ./gradlew --no-daemon :app:assembleDebug
-  - name: 上传 APK
-    uses: actions/upload-artifact@v4
-    with:
-      name: SmsForwarder-V56-APK
-      path: source-unpack/**/build/outputs/apk/debug/*.apk
-      if-no-files-found: error
-      retention-days: 7
+    steps:
+      - name: 下载仓库内容
+        uses: actions/checkout@v4
+
+      - name: 设置 Java 11
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '11'
+
+      - name: 检查并解压源码 ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mapfile -t zips < <(find . -maxdepth 1 -type f -iname '*.zip' -print)
+
+          echo '仓库根目录中的 ZIP 文件：'
+          printf '%s\n' "${zips[@]}"
+
+          if [ "${#zips[@]}" -ne 1 ]; then
+            echo '错误：仓库根目录必须只保留一个源码 ZIP。'
+            exit 1
+          fi
+
+          mkdir -p source-unpack
+          unzip -q "${zips[0]}" -d source-unpack
+
+          mapfile -t wrappers < <(find source-unpack -type f -name gradlew -print)
+
+          if [ "${#wrappers[@]}" -ne 1 ]; then
+            echo '错误：源码 ZIP 中必须能找到唯一一个 gradlew 文件。'
+            exit 1
+          fi
+
+          echo "WRAPPER=${wrappers[0]}" >> "$GITHUB_ENV"
+
+      - name: 准备 Debug 签名文件
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          project_dir="$(dirname "$WRAPPER")"
+          keystore="$project_dir/app/debug.keystore"
+
+          if [ ! -f "$keystore" ]; then
+            mkdir -p "$(dirname "$keystore")"
+
+            keytool -genkeypair -v \
+              -keystore "$keystore" \
+              -storepass android \
+              -alias androiddebugkey \
+              -keypass android \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname 'CN=Android Debug,O=Android,C=US'
+          fi
+
+      - name: 编译 Debug APK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          chmod +x "$WRAPPER"
+          cd "$(dirname "$WRAPPER")"
+
+          ./gradlew --no-daemon :app:assembleDebug
+
+      - name: 上传 APK 供下载
+        uses: actions/upload-artifact@v4
+        with:
+          name: SmsForwarder-V56-APK
+          path: source-unpack/**/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 7
